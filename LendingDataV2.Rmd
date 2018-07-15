@@ -1,0 +1,170 @@
+---
+title: "LendingData"
+author: "Mohamed"
+date: "5/16/2018"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+library(WDI)
+library(RItools)
+library(pdftools)
+library(tibble)
+library(tidyr)
+library(reshape2)
+library(readxl)
+library(openxlsx)
+library(foreign)
+library(plyr)
+library(dplyr)
+Sys.setlocale("LC_ALL","C")
+```
+
+```{r, include=FALSE}
+LendingDataI <- read.csv("~/Documents/Margin Algo/LoansLarry.csv")
+
+LendingDataI$loan_status[grep("Does not meet the credit policy. Status:Fully", LendingDataI$loan_status)] <- "Fully Paid"
+
+LendingDataI$loan_status[grep("Does not meet the credit policy. Status:Charged", LendingDataI$loan_status)] <- "Charged Off"
+
+LendingDataI$Repayment <- 0
+LendingDataI$Repayment[grep("Fully Paid", LendingDataI$loan_status)] <- 1
+
+LendingDataI$term <- gsub(' months',"", LendingDataI$term, fixed = TRUE)
+
+LendingDataI$emp_length <- gsub(' years',"", LendingDataI$emp_length, fixed = TRUE)
+LendingDataI$emp_length <- gsub(' year',"", LendingDataI$emp_length, fixed = TRUE)
+LendingDataI$emp_length <- gsub('+',"", LendingDataI$emp_length, fixed = TRUE)
+LendingDataI$emp_length <- gsub('< ',"", LendingDataI$emp_length, fixed = TRUE)
+
+LendingDataI$int_rate <- gsub('%',"", LendingDataI$int_rate, fixed = TRUE)
+
+LendingDataI$grade <- as.factor(LendingDataI$grade)
+LendingDataI$sub_grade <- as.factor(LendingDataI$sub_grade)
+LendingDataI$term <- as.numeric(LendingDataI$term)
+LendingDataI$installment <- as.numeric(LendingDataI$installment)
+LendingDataI$int_rate <- as.numeric(LendingDataI$int_rate)
+LendingDataI$loan_amnt <- as.numeric(LendingDataI$loan_amnt)
+LendingDataI$funded_amnt <- as.numeric(LendingDataI$funded_amnt)
+LendingDataI$funded_amnt_inv <- as.numeric(LendingDataI$funded_amnt_inv)
+## LendingDataI$emp_length <- as.factor(LendingDataI$emp_length)
+LendingDataI$home_ownership <- as.factor(LendingDataI$home_ownership)
+LendingDataI$annual_inc <- as.numeric(LendingDataI$annual_inc)
+LendingDataI$dti <- as.numeric(LendingDataI$dti)
+LendingDataI$open_acc <- as.numeric(LendingDataI$open_acc)
+LendingDataI$pub_rec <- as.numeric(LendingDataI$pub_rec)
+LendingDataI$revol_bal <- as.numeric(LendingDataI$revol_bal)
+LendingDataI$revol_util <- as.numeric(LendingDataI$revol_util)
+LendingDataI$total_acc <- as.numeric(LendingDataI$total_acc)
+LendingDataI$total_pymnt <- as.numeric(LendingDataI$total_pymnt)
+LendingDataI$total_pymnt_inv <- as.numeric(LendingDataI$total_pymnt_inv)
+LendingDataI$total_rec_prncp <- as.numeric(LendingDataI$total_rec_prncp)
+LendingDataI$total_rec_int <- as.numeric(LendingDataI$total_rec_int)
+LendingDataI$recoveries <- as.numeric(LendingDataI$recoveries)
+LendingDataI$emp_length <- as.numeric(LendingDataI$emp_length)
+
+LendingDataI$AR <- LendingDataI$total_rec_prncp + LendingDataI$total_rec_int
+LendingDataI$int_rate <- LendingDataI$int_rate <- gsub('%',"", LendingDataI$int_rate, fixed = TRUE)
+LendingDataI$int_rate <- as.numeric(LendingDataI$int_rate)
+LendingDataI$funded_amnt <- as.numeric(LendingDataI$funded_amnt)
+LendingDataI$AR <- as.numeric(LendingDataI$AR)
+LendingDataI$int_rate <- LendingDataI$int_rate/100
+LendingDataI$EAER <- (LendingDataI$funded_amnt * (1 + LendingDataI$int_rate))
+LendingDataI$EAER <- as.numeric(LendingDataI$EAER)
+LendingDataI$term <- gsub(' months',"", LendingDataI$term, fixed = TRUE)
+LendingDataI$term <- as.numeric(LendingDataI$term)
+LendingDataI$PPT <- LendingDataI$EAER / LendingDataI$term
+LendingDataI$PPT <- as.numeric(LendingDataI$PPT)
+LendingDataI$NTR <- (LendingDataI$AR/LendingDataI$EAER)*(LendingDataI$EAER/LendingDataI$PPT)
+
+
+LendingPersonal <- LendingDataI[grep("^Personal", LendingDataI$title, ignore.case = TRUE, fixed = FALSE),]
+
+summary(LendingPersonal$loan_status)
+summary(LendingPersonal$Repayment)
+summary(LendingPersonal$purpose)
+summary(LendingPersonal$emp_length)
+head(LendingPersonal$Repayment)
+```
+
+```{r, include=FALSE}
+## Algo Repayment -- Personal Loans
+
+m1 <- lm(Repayment ~ loan_amnt + funded_amnt + funded_amnt_inv + term + int_rate + installment + grade + sub_grade + emp_length + home_ownership + annual_inc + dti + open_acc + revol_bal + pub_rec + revol_util + total_acc + total_pymnt + total_pymnt_inv + total_rec_int + total_rec_prncp + recoveries, data=LendingPersonal)
+step(m1, direction="backward")
+
+
+m2 <- lm(Repayment ~ funded_amnt + total_rec_prncp, data = LendingPersonal, family=binomial)
+
+m3 <- lm(Repayment ~ loan_amnt + term + int_rate + grade + emp_length + home_ownership + annual_inc + dti, data=LendingPersonal)
+```
+
+```{r}
+## Repayment Algorithms for Personal Loans
+summary(m1)
+summary(m2)
+summary(m3)
+```
+
+```{r, include=FALSE}
+## Algo Repayment -- Overall
+
+m4 <- lm(Repayment ~ loan_amnt + funded_amnt + funded_amnt_inv + term + int_rate + installment + grade + sub_grade + emp_length + home_ownership + annual_inc + dti + open_acc + revol_bal + pub_rec + revol_util + total_acc + total_pymnt + total_pymnt_inv + total_rec_int + total_rec_prncp + recoveries, data=LendingDataI)
+step(m1, direction="backward")
+
+m5 <- lm(Repayment ~ loan_amnt + revol_util + dti + total_pymnt_inv + annual_inc + funded_amnt_inv + int_rate + pub_rec + emp_length + term + sub_grade + installment + total_rec_int + recoveries + total_pymnt + total_rec_prncp + funded_amnt, data = LendingDataI)
+
+m6 <- lm(Repayment ~ loan_amnt + term + int_rate + grade + emp_length + home_ownership + annual_inc + dti, data=LendingDataI)
+```
+
+```{r}
+## Repayment Algorithms for General Loans
+summary(m4)
+summary(m5)
+summary(m6)
+```
+
+```{r, include=FALSE}
+## Algo Repayment -- Step II -- Interest Rate as IV
+
+m7 <- lm(NTR ~ loan_amnt + funded_amnt + funded_amnt_inv + term + int_rate + 
+    installment + emp_length + home_ownership + annual_inc + 
+    dti + open_acc + revol_bal + revol_util + total_acc + total_pymnt + 
+    total_pymnt_inv + total_rec_int + total_rec_prncp + recoveries, data=LendingPersonal)
+
+summary(m7)
+m8 <- lm(Repayment ~ loan_amnt + revol_util + dti + total_pymnt_inv + annual_inc + funded_amnt_inv + int_rate + pub_rec + emp_length + term + installment + total_rec_int + recoveries + total_pymnt + total_rec_prncp + funded_amnt, data = LendingPersonal)
+
+m9 <- lm(Repayment ~ loan_amnt + term + int_rate + emp_length + home_ownership + annual_inc + dti, data=LendingPersonal)
+```
+
+```{r}
+plot.new <- plot(LendingDataI$NTR ~ LendingDataI$int_rate, xlim=c(0.05,.25), ylim=c(0,36), main = "Number of Terms Repaid over Interest Rate",
+     xlab = "Interest Rate", ylab = "Number of Terms Repaid") 
+  abline(a = 36, b = coef(m7)[7], lwd=2, col="blue", plot = plot.new)
+```
+
+```{r, include=FALSE}
+## Algo Repayment -- Step II -- Best Guess Algo
+m10 <- lm(Repayment ~ emp_length + home_ownership + dti + annual_inc + loan_amnt + term + zip_code + purpose, data = LendingPersonal)
+```
+
+```{r}
+## Algo Repayment -- Step II -- Model output
+summary(m7)
+summary(m8)
+summary(m9)
+summary(m10)
+```
+
+```{r}
+m11 <- lm(Repayment ~ int_rate, data=LendingPersonal)
+summary(m11)
+```
+

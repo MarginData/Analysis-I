@@ -1,0 +1,655 @@
+---
+title: "LendingDataV3"
+author: "Mohamed"
+date: "5/21/2018"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+
+```{r, include=FALSE}
+library(gmodels)
+library(lubridate)
+library(plyr)
+library(ggplot2)
+library(caTools)
+library(e1071)
+library(ROCR)
+library(caret)
+library(ROSE)
+```
+
+```{r, include=FALSE}
+LD <- read.csv("~/Documents/Margin Algo/LoansLarry.csv")
+LD$total_rec_int <- as.numeric(LD$total_rec_int)
+LD$total_rec_prncp <- as.numeric(LD$total_rec_prncp)
+LD$AR <- LD$total_rec_prncp + LD$total_rec_int
+LD$int_rate <- LD$int_rate <- gsub('%',"", LD$int_rate, fixed = TRUE)
+LD$int_rate <- as.numeric(LD$int_rate)
+LD$funded_amnt <- as.numeric(LD$funded_amnt)
+LD$AR <- as.numeric(LD$AR)
+LD$int_rate <- LD$int_rate/100
+LD$EAER <- (LD$funded_amnt * (1 + LD$int_rate))
+LD$EAER <- as.numeric(LD$EAER)
+LD$term <- gsub(' months',"", LD$term, fixed = TRUE)
+LD$term <- as.numeric(LD$term)
+LD$PPT <- LD$EAER / LD$term
+LD$PPT <- as.numeric(LD$PPT)
+LD$NTR <- (LD$AR/LD$EAER)*(LD$EAER/LD$PPT)
+features <- c("NTR", "loan_status", "grade", "open_acc","pub_rec", "dti", "delinq_2yrs", "inq_last_6mths", "emp_length", "annual_inc", "home_ownership",  "purpose", "loan_amnt","int_rate", "installment", "revol_bal", "revol_util")
+LD <- subset(LD, select = features)
+LD <- LD[!apply(LD == "", 1, all),]
+LD <- LD[grep("Charged", LD$purpose, ignore.case = TRUE, fixed = FALSE),]
+```
+
+```{r, include=FALSE}
+options(scipen = 50)
+plot(LD$emp_length, col="red")
+LD$emp_cat <- rep(NA, length(LD$emp_length))
+LD$emp_cat[which(LD$emp_length == "< 1 year")] <- "0-1"
+LD$emp_cat[which(LD$emp_length == "1 year" | LD$emp_length=="2 years" | LD$emp_length=="3 years")] <- "1-3"
+LD$emp_cat[which(LD$emp_length == "4 years" | LD$emp_length=="5 years" | LD$emp_length=="6 years")] <- "4-6"
+LD$emp_cat[which(LD$emp_length == "7 years" | LD$emp_length=="8 years" | LD$emp_length=="9 years")] <- "7-9"
+LD$emp_cat[which(LD$emp_length == "10+ years")] <- "10+"
+LD$emp_cat[which(LD$emp_length == "n/a")] <- "missing"
+LD$emp_cat <- as.factor(LD$emp_cat)
+plot(LD$emp_cat, col="red", main="Histogram of factorial variable emp_cat")
+summary(LD$emp_cat)
+LD$emp_length <- NULL
+```
+
+```{r, include=FALSE}
+#Preparing data for analysis
+#int_rate variable
+
+class(LD$int_rate) 
+
+#It is factor, should be numeric
+
+LD$int_rate <- as.numeric(sub("%","",LD$int_rate))
+
+#Taking out % sign and converting into numeric
+
+LD$int_rate <- LD$int_rate / 100
+is.numeric(LD$int_rate) 
+
+# TRUE
+
+anyNA(LD$int_rate) 
+
+#No missing values
+
+#revol_util variable
+
+class(LD$revol_util) 
+
+#It is factor, should be numeric
+
+LD$revol_util <- as.numeric(sub("%","",LD$revol_util))
+
+#Taking out % sign and converting into numeric
+
+LD$revol_util <- LD$revol_util / 100
+is.numeric(LD$revol_util) 
+
+# TRUE
+
+anyNA(LD$revol_util) 
+
+#There are missing values
+
+index.NA <- which(is.na(LD$revol_util)) 
+
+#766 missing values
+
+LD$revol_util[index.NA] <- median(LD$revol_util, na.rm = TRUE) 
+
+#All missing values replaced by median 0.542
+
+anyNA(LD$revol_util)
+
+#No missing values
+
+#revol_bal variable
+
+class(LD$revol_bal)
+
+#It is factor, should be numeric
+
+LD$revol_bal <- as.character(LD$revol_bal)
+
+#Converting into character
+
+LD$revol_bal <- as.numeric(LD$revol_bal)
+
+# Converting into numeric
+
+anyNA(LD$revol_bal)
+
+#No missing values
+
+#installment variable
+
+class(LD$installment)
+
+#It is factor, should be numeric
+
+LD$installment <- as.character(LD$installment)
+
+#Converting into character
+
+LD$installment <- as.numeric(LD$installment)
+
+#Converting into numeric
+
+is.numeric(LD$installment)
+
+# TRUE
+
+anyNA(LD$installment) 
+
+#No missing values
+
+#loan_amnt
+
+class(LD$loan_amnt)
+
+#It is factor, should be numeric
+
+LD$loan_amnt <- as.character(LD$loan_amnt)
+
+#Converting into character
+
+LD$loan_amnt <- as.numeric(LD$loan_amnt)
+
+#Converting into numeric
+
+is.numeric(LD$loan_amnt)
+
+# TRUE
+
+anyNA(LD$loan_amnt)
+
+#No missing values
+
+#annual_inc
+
+class(LD$annual_inc)
+
+#It is factor, should be numeric
+
+LD$annual_inc <- as.character(LD$annual_inc)
+
+#Converting into character
+
+LD$annual_inc <- as.numeric(LD$annual_inc)
+
+#Converting into numeric
+
+is.numeric(LD$annual_inc)
+
+# TRUE
+
+anyNA(LD$annual_inc)
+
+#4 missing values
+
+index.NA <- which(is.na(LD$annual_inc))
+LD$annual_inc[index.NA] <- median(LD$annual_inc, na.rm = TRUE)
+anyNA(LD$annual_inc)
+
+#No missing values
+
+#laon_status
+
+class(LD$loan_status)
+
+#It is factor
+
+LD$loan_status <- as.character(LD$loan_status)
+is.character(LD$loan_status)
+
+#Taking only rows where laon_status is fully paid or charged off
+
+arg <- LD$loan_status=="Fully Paid" | LD$loan_status=="Charged Off"
+LD <- subset(LD, arg==TRUE) 
+
+#Number of observations reduced to 553403
+
+#Encoding loan_status 0 - Charged Off, 1 - Fully paid
+
+LD$loan_status <- ifelse(LD$loan_status=="Fully Paid",1,0)
+LD$loan_status <- as.integer(LD$loan_status) 
+
+#Converting to integer
+
+is.integer(LD$loan_status)
+anyNA(LD$loan_status)
+
+#dti
+
+class(LD$dti) 
+
+#It is factor, should be numeric
+
+LD$dti <- as.character(LD$dti) 
+
+#Converting into character
+
+LD$dti <- as.numeric(LD$dti) 
+
+#Converting into numeric
+
+is.numeric(LD$dti) 
+
+# TRUE
+
+anyNA(LD$dti) 
+
+#No missing values
+
+#open_acc
+
+class(LD$open_acc)
+
+#It is factor, should be numeric
+
+LD$open_acc <- as.character(LD$open_acc)
+
+#Converting into character
+
+LD$open_acc <- as.numeric(LD$open_acc)
+
+#Converting into numeric
+
+is.numeric(LD$open_acc)
+
+# TRUE
+
+anyNA(LD$open_acc)
+
+#No missing values
+
+#pub_rec
+
+class(LD$pub_rec) 
+
+#It is factor, should be numeric
+
+LD$pub_rec <- as.character(LD$pub_rec) 
+
+#Converting into character
+
+LD$pub_rec <- as.numeric(LD$pub_rec) 
+
+#Converting into numeric
+
+is.numeric(LD$pub_rec) 
+
+# TRUE
+
+anyNA(LD$pub_rec) 
+
+#No missing values
+
+#delinq_2yrs
+
+class(LD$delinq_2yrs)
+
+#It is factor, should be numeric
+
+LD$delinq_2yrs <- as.character(LD$delinq_2yrs) 
+
+#Converting into character
+
+LD$delinq_2yrs <- as.numeric(LD$delinq_2yrs)
+
+#Converting into numeric
+
+is.numeric(LD$delinq_2yrs)
+
+# TRUE
+
+anyNA(LD$delinq_2yrs)
+
+#No missing values
+
+#inq_last_6mths
+
+class(LD$inq_last_6mths)
+
+#It is factor, should be numeric
+
+LD$inq_last_6mths <- as.character(LD$inq_last_6mths)
+
+#Converting into character
+
+LD$inq_last_6mths <- as.numeric(LD$inq_last_6mths)
+
+#Converting into numeric
+
+is.numeric(LD$inq_last_6mths)
+
+# TRUE
+
+anyNA(LD$inq_last_6mths)
+
+#No missing values
+
+str(LD)
+```
+
+```{r}
+#PART 4 EXPLORATORY DATA ANALYSIS
+# Distribution of Interest rate
+
+hist(LD$int_rate, col = "red", main = "Distribution of Intrest rate", xlab = "Interest rate")
+summary(LD$int_rate)
+
+#Turning loan_status to factor
+
+LD$loan_status <- factor(LD$loan_status)
+
+#Distribution of grade scores
+#Histogram of grade score colored by loan_status in percentage
+
+plot1 <- ggplot(LD,aes(x=grade, y=((..count..)/sum(..count..))*100))
+plot1 <- plot1 + geom_histogram(aes(fill=loan_status), color="black", stat = "count", alpha=0.6)
+plot1 <- plot1 + theme_light()
+plot1 <- plot1 + scale_fill_manual("Loan Status",values = c("red", "green")) +
+  labs(y="Percent", x="Loan Grades from A (best) to G (poor)")
+plot1 <- plot1 + ggtitle("Distribution of Loans By Grading Scores and Loan Status")
+plot1
+
+#Making Contingency Table to check percentage of grading score in relation with unpaid loans 
+
+CrossTable(LD$grade, LD$loan_status,prop.r = TRUE, prop.c = FALSE, prop.t = FALSE,
+           prop.chisq = FALSE )
+
+#Taking the highest loan purposes
+
+arg <- LD$purpose == "credit_card" | LD$purpose == "debt_consolidation" |
+        LD$purpose == "home_improvement" | LD$purpose == "major_purchase" | LD$purpose == "other"
+j <- subset(LD, arg==TRUE)
+
+#Making distribution of loans by purpose
+
+plot2 <- ggplot(j,aes(x=purpose, y=((..count..)/sum(..count..))*100))
+plot2 <- plot2 + geom_bar(aes(fill=loan_status), position = "dodge", stat = "count")
+plot2 <- plot2 + theme_bw()
+plot2 <- plot2 + scale_fill_manual("Loan Status",values = c("red", "green")) +
+  labs(y="Percent", x="Loan Purpose")
+plot2 <- plot2 + ggtitle("Distribution of Loans By Purpose")
+plot2
+
+#Making Contingency Table to check percentage of grading score in relation with unpaid loans 
+
+CrossTable(LD$purpose, LD$loan_status,prop.r = TRUE, prop.c = FALSE, prop.t = FALSE,
+           prop.chisq = FALSE )
+
+#Making scatter diagram to control relation between interest rates and loans grades
+
+plot3 <- ggplot(LD, aes(x=int_rate, y=sub_grade)) + geom_point(aes(color=loan_status, alpha=0.4))
+plot3 <- plot3 + theme_bw() + scale_fill_manual("Loan Status", values = c("red", "green")) +
+  labs(y="Sub Grades", x="Interest Rates")
+plot3
+
+#Deleting detected outliers
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="G1"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="F5"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="E5"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="E4"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="E3"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="E2"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="E1"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="D5"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="D4"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="D3"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="D2"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="D1"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="C5"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="C4"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="C3"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="C2"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="C1"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="B5"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="B4"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="B3"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="B2"
+LD <- subset(LD, arg==FALSE)
+
+arg <- LD$int_rate==0.06 & LD$sub_grade=="B1"
+LD <- subset(LD, arg==FALSE)
+
+#5-number summary statistics for annual income
+
+summary(LD$annual_inc) #There are potential outliers
+
+#Plotting scatter diagram to detect outliers
+
+plot(LD$annual_inc, ylab = "Annual Income")
+
+#Removing outliers
+
+index.outliers <- which(LD$annual_inc > 1000000) 
+
+#91 outliers detected
+
+LD <- LD[-index.outliers,] 
+
+#Outliers deleted
+
+#Histogram for Annual Income
+
+hist(LD$annual_inc, col="red", xlab = "Annual Income", main = "Histogram of Annual Income")
+
+#Removing outliers for dti
+
+summary(LD$dti)
+
+outliers_upperlimit <- quantile(LD$dti, 0.75) + 1.5 * IQR(LD$dti)
+
+# upper_limit = 40.8
+
+```
+
+```{r}
+#PART 5 MODEL BUILDING AND MODEL EVALUATION
+
+loan.model <- subset(LD, select = c(1,2,4:11,13,14,17:19)) 
+anyNA(loan.model) # No missing values
+dim(loan.model) #14 features + 1 response, 552,625 observations
+
+#Splitting data set into training and test set
+
+set.seed(123) 
+#making results reproduciable
+
+
+sample <- sample.split(loan.model$loan_status, SplitRatio = .7)
+train.data <- subset(loan.model, sample==TRUE)
+test.data <- subset(loan.model, sample==FALSE)
+
+#LOGISTIC REGRESSION
+
+logistic.regressor <- glm(loan_status ~ ., family = "binomial", data = train.data)
+summary(logistic.regressor)
+
+#Predicting outcomes on test data
+prob_pred <- predict(logistic.regressor, newdata = test.data, type = "response")
+summary(prob_pred)
+
+#Cut-off value = 0.5
+pred_cut_off <- ifelse(prob_pred > 0.5, 1,0) #Setting cut-off to be at 0.5
+table(test.data$loan_status,pred_cut_off )
+pred <- prediction(pred_cut_off,test.data$loan_status)
+perf <- performance(pred, "tpr", "fpr")
+#Printing AUC Value
+perf1 <- performance(pred, "auc")
+print(perf1@y.values[[1]])
+#Plotting the ROC-curve
+roc.curve(test.data$loan_status, pred_cut_off,col="red", main="The ROC-curve for Model with cut-off=0.5")
+text(0.6,0.2,paste("AUC=0.52"))
+confusionMatrix(test.data$loan_status,pred_cut_off )
+
+#Cut-off value = 0.8
+pred_cut_off <- ifelse(prob_pred > 0.8, 1,0) #Setting cut-off to be at 0.8
+table(test.data$loan_status,pred_cut_off )
+pred <- prediction(pred_cut_off,test.data$loan_status)
+perf <- performance(pred, "tpr", "fpr")
+
+#Printing AUC Value
+perf1 <- performance(pred, "auc")
+print(perf1@y.values[[1]])
+#Plotting the ROC-curve
+roc.curve(test.data$loan_status, pred_cut_off,col="red", main="The ROC-curve for Model with cut-off=0.8")
+text(0.6,0.2,paste("AUC=0.65"))
+confusionMatrix(test.data$loan_status,pred_cut_off )
+
+#Plotting proportion of fully paid vs charged off loans
+options(scipen=20)
+barchart(train.data$loan_status, main="Proportion of Fully Paid and Charged Off Loans (Training Set)", xlab="Number of Loans")
+
+#Assuming investor wants to finance top 20% of new loans in his portfolio
+cutoff <- quantile(prob_pred, 0.8)
+pred_cut_20 <- ifelse(prob_pred > cutoff, 1,0)
+true.value <- as.character(test.data$loan_status)
+true.value <- as.integer(true.value)
+true_and_pred <- cbind(true.value, pred_cut_20)
+
+accepted_loans <- true_and_pred[pred_cut_20==1,1]
+bad_rate <- (sum(accepted_loans==0) / length(accepted_loans))*100 #6.69% of bad loans in his portfolio
+
+#Building Strategy Table 
+accept_rate <- sort(seq(0,0.99,by=0.05), decreasing = TRUE)
+cutoff <- c()
+bad_rate <- c()
+for(i in 1:length(accept_rate)) {
+  cutoff[i] <- quantile(prob_pred, accept_rate[i])
+  pred_cut <- ifelse(prob_pred > cutoff[i], 1,0)
+  true.value <- as.character(test.data$loan_status)
+  true.value <- as.integer(true.value)
+  true_and_pred <- cbind(true.value, pred_cut)
+  accepted_loans <- true_and_pred[pred_cut==1,1]
+  bad_rate[i] <- (sum(accepted_loans==0) / length(accepted_loans))
+}
+
+#Making Strategy Table
+strategy <- cbind(1 - accept_rate, cutoff, bad_rate)
+colnames(strategy) <- c("Accept Rate","Cut-off Value", "Bad Rate")
+strategy <- as.data.frame(strategy)
+
+#Plotting Strategy Curve
+curve <- as.matrix(strategy[-2])
+curve[,2] <- curve[,2]
+plot(curve, type="l",col="dark red", lwd=3, main="Strategy Curve")
+
+#IMPROVING MODEL BY BALANCED DATA
+#Making balanced data using SDG method
+balanced.data <- ROSE(loan_status ~ ., data = train.data, seed = 1)$data
+table(balanced.data$loan_status) #Now we have almost 50% 50%
+
+#Building new logistic regression model
+LD$grade <- as.factor(LD$grade)
+LD$sub_grade <- as.factor(LD$sub_grade)
+LD$term <- as.numeric(LD$term)
+LD$installment <- as.numeric(LD$installment)
+LD$int_rate <- as.numeric(LD$int_rate)
+LD$loan_amnt <- as.numeric(LD$loan_amnt)
+LD$funded_amnt <- as.numeric(LD$funded_amnt)
+LD$funded_amnt_inv <- as.numeric(LD$funded_amnt_inv)
+## LD$emp_length <- as.factor(LD$emp_length)
+LD$home_ownership <- as.factor(LD$home_ownership)
+LD$annual_inc <- as.numeric(LD$annual_inc)
+LD$dti <- as.numeric(LD$dti)
+LD$open_acc <- as.numeric(LD$open_acc)
+LD$pub_rec <- as.numeric(LD$pub_rec)
+LD$revol_bal <- as.numeric(LD$revol_bal)
+LD$revol_util <- as.numeric(LD$revol_util)
+LD$total_acc <- as.numeric(LD$total_acc)
+LD$total_pymnt <- as.numeric(LD$total_pymnt)
+LD$total_pymnt_inv <- as.numeric(LD$total_pymnt_inv)
+LD$total_rec_prncp <- as.numeric(LD$total_rec_prncp)
+LD$total_rec_int <- as.numeric(LD$total_rec_int)
+LD$recoveries <- as.numeric(LD$recoveries)
+LD$emp_length <- as.numeric(LD$emp_length)
+rose.regressor <- glm(NTR ~ grade + pub_rec + dti + delinq_2yrs + inq_last_6mths + emp_length + annual_inc + home_ownership +  purpose + loan_amnt + int_rate + installment + revol_bal + revol_util, data = LD)
+summary(rose.regressor)
+
+#Making predictions on test set
+prob_pred_rose <- predict(rose.regressor, newdata = test.data, type="response")
+hist(prob_pred_rose)
+
+
+#Evaluating new model
+roc.curve(test.data$loan_status, prob_pred_rose, col="dark red", main="The ROC-curve for Improved Model")
+text(0.6,0.2,paste("AUC=0.704"))
+#END OF PART 5
+```
+
+```{r}
+Final_model <- rose.regressor
+summary(Final_model)
+summary(Final_model)$r.squared
+summary(Final_model)$adj.r.squared
+
+# li
+```
+
+```{r}
+plot(LD$int_rate, LD$NTR, )
+```
+
